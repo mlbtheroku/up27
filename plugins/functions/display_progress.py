@@ -1,6 +1,6 @@
 # @Tellybots
 
-
+from plugins.config import *
 import math
 import time
 import asyncio
@@ -21,63 +21,115 @@ PROGRESS = """
 
 ⏱️ **Eᴛᴀ:** `{4}`
 """
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-async def progress_for_pyrogram(
-    current,
-    total,
-    ud_type,
-    message: Union[Message, CallbackQuery],
-    start
-):
+
+class Progress:
+    def __init__(
+        self,
+        from_user,
+        client,
+        mess: Message,
+        filename_bygopal="",
+        is_downloading=False,
+    ):
+        self._from_user = from_user
+        self._client = client
+        self._mess = mess
+        self._filename_bygopal = filename_bygopal
+        self._is_downloading = is_downloading
+        self._cancelled = False
+
+@property
+def is_cancelled(self):
+    chat_id = self._mess.chat.id
+    mes_id = self._mess.message_id
+    if gDict[chat_id] and mes_id in gDict[chat_id]:
+        self._cancelled = True
+    return self._cancelled
+
+
+async def progr_for_pyrogram(self, current, total, ud_type, start):
+    chat_id = self._mess.chat.id
+    mes_id = self._mess.message_id
+    from_user = self._from_user
+    filename_bygopal = self._filename_bygopal
+    is_downloading = self._is_downloading
     now = time.time()
     diff = now - start
-    if round(diff % 10.00) == 0 or current == total:
+    reply_markup = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Cancel 🚫",
+                    callback_data=(
+                        f"gUPcancel/{chat_id}/{mes_id}/{from_user}"
+                    ).encode("UTF-8"),
+                )
+            ]
+        ]
+    )
+    if self.is_cancelled:
+        LOGGER.info("stopping ")
+        await self._mess.edit(
+            f"😔 Cancelled/ERROR: `{ud_type}` ({humanbytes(total)})"
+        )
+        await self._client.stop_transmission()
+
+    if round(diff % float(EDIT_SLEEP_TIME_OUT)) == 0 or current == total:
+        # if round(current / total * 100, 0) % 5 == 0:
         percentage = current * 100 / total
         speed = current / diff
         elapsed_time = round(diff) * 1000
         time_to_completion = round((total - current) / speed) * 1000
-        estimated_total_time = elapsed_time + time_to_completion
+        estimated_total_time = time_to_completion
 
         elapsed_time = TimeFormatter(milliseconds=elapsed_time)
         estimated_total_time = TimeFormatter(milliseconds=estimated_total_time)
-
-        progress = "[{0}{1}] \n".format(
-            ''.join(["★" for _ in range(math.floor(percentage / 5))]),
-            ''.join(["◯" for _ in range(20 - math.floor(percentage / 5))])
-            )
-
-        tmp = progress + PROGRESS.format(
+        if is_downloading:
+            progress1 = f"**Downloading:** {filename_bygopal}\n"
+        else:
+            progress1 = f"**Uploading:** {filename_bygopal}\n"
+        progress2 = "**[{0}{1}]** **{2}%**\n".format(
+            "".join(
+                [FINISHED_PROGRESS_STR for i in range(math.floor(percentage / 4))]
+            ),
+            "".join(
+                [
+                    UN_FINISHED_PROGRESS_STR
+                    for i in range(25 - math.floor(percentage / 4))
+                ]
+            ),
             round(percentage, 2),
-            humanbytes(current),
-            humanbytes(total),
-            humanbytes(speed),
-            estimated_total_time if estimated_total_time != '' else "0 s"
+        )
+
+        tmp = (
+            progress1
+            + progress2
+            + "{0} **of** {1}\n**Speed:** {2}/sec\n**ETA:** {3}\n".format(
+                humanbytes(current),
+                humanbytes(total),
+                humanbytes(speed),
+                # elapsed_time if elapsed_time != '' else "0 s",
+                estimated_total_time if estimated_total_time != "" else "0 s",
+            )
         )
         try:
-            try:
-                _ = message.message_id
-                await message.edit(
-                    text="**{}**\n\n {}".format(
-                        ud_type,
-                        tmp
-                    ),
-                    parse_mode='markdown'
+            if not self._mess.photo:
+                await self._mess.edit_text(
+                    text="{}\n {}".format(ud_type, tmp), reply_markup=reply_markup
                 )
-            except AttributeError:
-                await bot.bot.edit_inline_caption(
-                    inline_message_id=message.inline_message_id,
-                    caption="**{}**\n\n {}".format(
-                        ud_type,
-                        tmp
-                    ),
-                    parse_mode='markdown'
+            else:
+                await self._mess.edit_caption(
+                    caption="{}\n {}".format(ud_type, tmp)
                 )
-        except FloodWait as e:
-            await asyncio.sleep(e.x)
-        except Exception:
-            pass
+        except FloodWait as fd:
+            logger.warning(f"{fd}")
+            time.sleep(fd.x)
+        except Exception as ou:
+            logger.info(ou)
 
-    
+
 
 def humanbytes(size):
     # https://stackoverflow.com/a/49361727/4723940
